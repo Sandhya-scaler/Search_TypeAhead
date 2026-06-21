@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Typeahead & Distributed Caching Simulator</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="header-title">
+                <h1>Search Typeahead System</h1>
+                <p>Distributed Caching (Consistent Hashing) & Recency-Aware Trending Simulator</p>
+            </div>
+            <div class="system-badge" id="system-status">System Operational</div>
+        </header>
+
+        <!-- Dashboard Layout -->
+        <div class="dashboard-grid">
+            <!-- Left Column: Search & Controls -->
+            <div class="flex-column">
+                <!-- Search Panel -->
+                <div class="card" style="overflow: visible; z-index: 10;">
+                    <div class="card-title">
+                        <span><i class="fa-solid fa-magnifying-glass"></i> Search Terminal</span>
+                    </div>
+                    <div class="search-container">
+                        <div class="search-input-wrapper">
+                            <input type="text" id="search-box" class="search-input" placeholder="Type to search (e.g., py, python, consistent...)" autocomplete="off">
+                            <button id="search-btn" class="search-icon-btn"><i class="fa-solid fa-arrow-right"></i></button>
+                        </div>
+                        <!-- Suggestions Dropdown -->
+                        <div id="suggestions" class="suggestions-dropdown"></div>
+                    </div>
+
+                    <!-- Search Feedback Notification -->
+                    <div id="search-feedback" class="search-feedback" style="margin-top: 1.25rem;">
+                        <span class="search-feedback-text" id="feedback-text"></span>
+                        <span class="search-feedback-time" id="feedback-time"></span>
+                    </div>
+                </div>
+
+                <!-- Control Panel -->
+                <div class="card">
+                    <div class="card-title">
+                        <span><i class="fa-solid fa-sliders"></i> Engine Configurations</span>
+                    </div>
+                    <div class="control-grid">
+                        <div class="control-item" style="grid-column: span 2;">
+                            <label>Ranking Mechanism</label>
+                            <div class="toggle-wrapper">
+                                <button class="toggle-btn" id="mode-basic" onclick="setRankingMode('basic')">Basic (Popularity)</button>
+                                <button class="toggle-btn active" id="mode-enhanced" onclick="setRankingMode('enhanced')">Enhanced (Recency-Aware)</button>
+                            </div>
+                        </div>
+
+                        <div class="control-item">
+                            <label>Batch Size Threshold</label>
+                            <div class="range-slider-wrapper">
+                                <input type="range" id="batch-threshold" class="range-slider" min="2" max="30" value="10" onchange="updateBackendConfig()">
+                                <span class="slider-val" id="batch-threshold-val">10</span>
+                            </div>
+                        </div>
+
+                        <div class="control-item">
+                            <label>Batch Flush Interval (s)</label>
+                            <div class="range-slider-wrapper">
+                                <input type="range" id="batch-interval" class="range-slider" min="1" max="20" value="5" onchange="updateBackendConfig()">
+                                <span class="slider-val" id="batch-interval-val">5s</span>
+                            </div>
+                        </div>
+
+                        <div class="control-item">
+                            <label>Cache TTL (s)</label>
+                            <div class="range-slider-wrapper">
+                                <input type="range" id="cache-ttl" class="range-slider" min="5" max="120" value="30" onchange="updateBackendConfig()">
+                                <span class="slider-val" id="cache-ttl-val">30s</span>
+                            </div>
+                        </div>
+
+                        <div class="control-item">
+                            <label>Recency Window (s)</label>
+                            <div class="range-slider-wrapper">
+                                <input type="range" id="decay-window" class="range-slider" min="10" max="300" value="60" onchange="updateBackendConfig()">
+                                <span class="slider-val" id="decay-window-val">60s</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.25rem;">
+                        <button class="btn btn-primary" onclick="triggerManualFlush()"><i class="fa-solid fa-arrow-up-from-bracket"></i> Flush Batch</button>
+                        <button class="btn btn-danger" onclick="clearCaches()"><i class="fa-solid fa-trash-can"></i> Invalidate Caches</button>
+                    </div>
+                </div>
+
+                <!-- Simulation & Mock Traffic -->
+                <div class="card">
+                    <div class="card-title">
+                        <span><i class="fa-solid fa-bolt"></i> Traffic Simulator</span>
+                    </div>
+                    <div class="flex-column" style="gap: 1rem;">
+                        <p style="color: var(--text-secondary); font-size: 0.85rem; line-height: 1.4;">
+                            Simulate incoming searches to test concurrent caching, consistent hashing key distribution, and batch flushing under load.
+                        </p>
+                        <div class="sim-controls">
+                            <button class="btn" onclick="simulateTraffic(10)"><i class="fa-solid fa-play"></i> +10 Searches</button>
+                            <button class="btn" onclick="simulateTraffic(50)"><i class="fa-solid fa-forward"></i> +50 Searches</button>
+                            <label class="autoplay-wrapper">
+                                <input type="checkbox" id="autoplay-check" class="autoplay-checkbox">
+                                <span>Live Traffic (1/s)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trending & Popular Searches -->
+                <div class="card">
+                    <div class="card-title">
+                        <span><i class="fa-solid fa-fire"></i> Trending & Popular Queries</span>
+                    </div>
+                    <div class="trending-container">
+                        <!-- Top 10 All Time -->
+                        <div>
+                            <h4 style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-secondary); text-transform: uppercase;"><i class="fa-solid fa-star"></i> All-Time Popular</h4>
+                            <div class="trending-list" id="popular-list"></div>
+                        </div>
+                        
+                        <!-- Top 10 Trending (Recency Boosted) -->
+                        <div>
+                            <h4 style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--accent-blue); text-transform: uppercase;"><i class="fa-solid fa-bolt"></i> Trending Now</h4>
+                            <div class="trending-list" id="trending-list"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Visualization & Metrics Dashboard -->
+            <div class="flex-column">
+                <!-- Metrics Panel -->
+                <div class="card">
+                    <div class="card-title">
+                        <span><i class="fa-solid fa-chart-simple"></i> System Metrics Dashboard</span>
+                    </div>
+                    <div class="metrics-grid">
+                        <div class="metric-box">
+                            <span class="metric-label">Suggestions Latency</span>
+                            <span class="metric-val blue" id="latency-val">0.00 ms</span>
+                            <span class="latency-sub" id="p95-latency-val">P95: 0.00 ms (last 100 reqs)</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-label">Cache Hit Rate</span>
+                            <span class="metric-val green" id="hit-rate-val">0.0%</span>
+                            <span class="latency-sub" id="hit-miss-counts">Hits: 0 | Misses: 0</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-label">Write Reduction Savings</span>
+                            <span class="metric-val pink" id="write-saved-val">0</span>
+                            <span class="latency-sub" id="writes-ratio">DB Writes: 0 | API Searches: 0</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-label">DB Reads (Fallback)</span>
+                            <span class="metric-val yellow" id="db-reads-val">0</span>
+                            <span class="latency-sub">Direct queries to SQL DB</span>
+                        </div>
+                    </div>
+
+                    <!-- Batch Buffer Queue Progress Bar -->
+                    <div class="buffer-bar-wrapper">
+                        <div class="buffer-bar-labels">
+                            <span>Batch Write Memory Buffer Status</span>
+                            <span id="buffer-ratio">0 / 10 items</span>
+                        </div>
+                        <div class="buffer-bar-container">
+                            <div id="buffer-fill" class="buffer-bar-fill"></div>
+                        </div>
+                        <div id="buffer-items-list" style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.4rem; font-family: 'Space Mono', monospace; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
+                            Buffer: [Empty]
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Consistent Hashing Ring Visualization -->
+                <div class="card">
+                    <div class="card-title">
+                        <span><i class="fa-solid fa-circle-nodes"></i> Consistent Hashing Ring Visualization</span>
+                    </div>
+                    <div class="ring-viz-container">
+                        <svg class="hash-ring-svg" viewBox="0 0 300 300" id="hash-ring">
+                            <!-- Background Circle Ring -->
+                            <circle cx="150" cy="150" r="105" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="8"></circle>
+                            
+                            <!-- Central logo/text -->
+                            <circle cx="150" cy="150" r="45" fill="rgba(10, 11, 20, 0.8)" stroke="rgba(255,255,255,0.04)"></circle>
+                            <text x="150" y="148" font-size="10" font-family="'Space Mono'" fill="rgba(255,255,255,0.4)" text-anchor="middle" font-weight="bold">HASH RING</text>
+                            <text x="150" y="160" font-size="9" font-family="'Space Mono'" fill="var(--accent-blue)" text-anchor="middle" id="ring-queries-count">150 vNodes</text>
+                            
+                            <!-- Groups for lines and nodes -->
+                            <g id="ring-lines"></g>
+                            <g id="ring-vnodes"></g>
+                            <g id="ring-query-point"></g>
+                        </svg>
+                        
+                        <div class="ring-debug-log" id="ring-debug">
+                            <i class="fa-solid fa-info-circle"></i> Type in the search box to visualize prefix routing in real-time.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Real-time Caching Nodes Content -->
+                <div class="card">
+                    <div class="card-title">
+                        <span><i class="fa-solid fa-database"></i> Distributed Cache Nodes Memory</span>
+                    </div>
+                    <div class="cache-nodes-grid">
+                        <div class="cache-node-column" style="border-top: 3px solid var(--node-a-color);">
+                            <div class="cache-node-header">
+                                <span style="color: #60a5fa;"><i class="fa-solid fa-server"></i> Node A</span>
+                                <span id="node-a-size" style="font-size:0.75rem; color:var(--text-secondary);">0 keys</span>
+                            </div>
+                            <div class="cache-node-keys" id="node-a-keys"></div>
+                        </div>
+
+                        <div class="cache-node-column" style="border-top: 3px solid var(--node-b-color);">
+                            <div class="cache-node-header">
+                                <span style="color: #34d399;"><i class="fa-solid fa-server"></i> Node B</span>
+                                <span id="node-b-size" style="font-size:0.75rem; color:var(--text-secondary);">0 keys</span>
+                            </div>
+                            <div class="cache-node-keys" id="node-b-keys"></div>
+                        </div>
+
+                        <div class="cache-node-column" style="border-top: 3px solid var(--node-c-color);">
+                            <div class="cache-node-header">
+                                <span style="color: #a78bfa;"><i class="fa-solid fa-server"></i> Node C</span>
+                                <span id="node-c-size" style="font-size:0.75rem; color:var(--text-secondary);">0 keys</span>
+                            </div>
+                            <div class="cache-node-keys" id="node-c-keys"></div>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- Real-time Console Log -->
+                <div class="card">
+                    <div class="card-title">
+                        <span><i class="fa-solid fa-terminal"></i> Backend Engine Routing Logs</span>
+                    </div>
+                    <div class="console-log" id="console-logs">
+                        <div class="console-line" style="color: var(--text-secondary);">System starting... Listening for typeahead operations.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Simulator Script -->
+    <script>
+        const API_URL = ""; // Relative URL
+        const searchBox = document.getElementById("search-box");
+        const suggestionsBox = document.getElementById("suggestions");
+        const consoleLogs = document.getElementById("console-logs");
+        
+        let lastLogs = [];
+        let ringData = []; // Hashing ring positions
+        let activeSuggestionIndex = -1;
+        let suggestionItemsList = [];
+        
+        // Node color mapping
+        const nodeColors = {
+            "Cache-Node-A": "var(--node-a-color)",
+            "Cache-Node-B": "var(--node-b-color)",
+            "Cache-Node-C": "var(--node-c-color)"
+        };
+
+        // ----------------------------------------------------
+        // 1. Initial Seeding and Operations
+        // ----------------------------------------------------
+        window.addEventListener("load", () => {
+            fetchRingData();
+            fetchMetrics();
+            fetchTrending();
+            
+            // Periodically poll metrics
+            setInterval(fetchMetrics, 1000);
+            setInterval(fetchTrending, 2000);
+            
+            // Key listeners for Typeahead
+            searchBox.addEventListener("input", handleTypeahead);
+            searchBox.addEventListener("keydown", handleKeyNavigation);
+            
+            // Search button click
+            document.getElementById("search-btn").addEventListener("click", () => submitSearch(searchBox.value));
+            
+            // Auto simulator timer
+            setInterval(autoTrafficSim, 1000);
+        });
+
+        // ----------------------------------------------------
+        // 2. Fetch Hashing Ring Positions & Render Ring SVG
+        // ----------------------------------------------------
+        function fetchRingData() {
+            fetch(`${API_URL}/cache/ring`)
+                .then(res => res.json())
+                .then(data => {
+                    ringData = data;
+                    renderRing();
+                })
+                .catch(err => logConsole("Error fetching hash ring configuration: " + err));
+        }
+
+        function renderRing() {
+            const vnodesGroup = document.getElementById("ring-vnodes");
+            vnodesGroup.innerHTML = "";
+            
+            const r = 105;
+            const cx = 150;
+            const cy = 150;
+            
+            ringData.forEach(pos => {
+                const fraction = pos.fraction;
+                const node = pos.node;
+                
+                // Convert fraction to angle (0 matches fraction 0.0 at the top, rotating clockwise)
+                const angle = (fraction * 2 * Math.PI) - (Math.PI / 2);
+                const x = cx + r * Math.cos(angle);
+                const y = cy + r * Math.sin(angle);
+                
+                // Create SVG circle for virtual node
+                const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                circle.setAttribute("cx", x);
+                circle.setAttribute("cy", y);
+                circle.setAttribute("r", 2.2);
+                
+                let color = "white";
+                if (node === "Cache-Node-A") color = "var(--node-a-color)";
+                else if (node === "Cache-Node-B") color = "var(--node-b-color)";
+                else if (node === "Cache-Node-C") color = "var(--node-c-color)";
+                
+                circle.setAttribute("fill", color);
+                circle.setAttribute("opacity", "0.75");
+                
+                // Tooltip title
+                const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+                title.textContent = `${node} (Hash Ring point: ${fraction.toFixed(4)})`;
+                circle.appendChild(title);
+                
+                vnodesGroup.appendChild(circle);
+            });
+        }
+
+        function updateQueryPointOnRing(hashFraction, nodeName) {
+            const queryPointGroup = document.getElementById("ring-query-point");
+            const linesGroup = document.getElementById("ring-lines");
+            
+            queryPointGroup.innerHTML = "";
+            linesGroup.innerHTML = "";
+            
+            if (hashFraction === null) return;
+            
+            const r = 105;
+            const cx = 150;
+            const cy = 150;
+            const angle = (hashFraction * Math.PI * 2) - (Math.PI / 2);
+            
+            const qx = cx + r * Math.cos(angle);
+            const qy = cy + r * Math.sin(angle);
+            
+            // Draw connector line from center to ring hash point
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", cx);
+            line.setAttribute("y1", cy);
+            line.setAttribute("x2", qx);
+            line.setAttribute("y2", qy);
+            line.setAttribute("stroke", "var(--accent-yellow)");
+            line.setAttribute("stroke-width", "1.5");
+            line.setAttribute("stroke-dasharray", "4 3");
+            linesGroup.appendChild(line);
+            
+            // Draw query node dot
+            const qCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            qCircle.setAttribute("cx", qx);
+            qCircle.setAttribute("cy", qy);
+            qCircle.setAttribute("r", 5.5);
+            qCircle.setAttribute("fill", "var(--accent-yellow)");
+            qCircle.setAttribute("filter", "drop-shadow(0 0 6px rgba(245,158,11,0.8))");
+            queryPointGroup.appendChild(qCircle);
+            
+            // Trace path/link to nearest clockwise node
+            // Highlight all vnodes of the winning node by giving them a slight glow pulse
+            const vnodes = document.getElementById("ring-vnodes").children;
+            const targetColor = nodeColors[nodeName] || "white";
+            
+            // Pulse the closest physical node connection
+            const winnerRingLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            winnerRingLine.setAttribute("x1", qx);
+            winnerRingLine.setAttribute("y1", qy);
+            
+            // Find coordinates of closest clockwise node in ringData
+            let closest = null;
+            for(let i = 0; i < ringData.length; i++) {
+                if (ringData[i].fraction >= hashFraction) {
+                    closest = ringData[i];
+                    break;
+                }
+            }
+            if (!closest && ringData.length > 0) {
+                closest = ringData[0]; // Wrap around
+            }
+            
+            if (closest) {
+                const cAngle = (closest.fraction * Math.PI * 2) - (Math.PI / 2);
+                const cx_node = cx + r * Math.cos(cAngle);
+                const cy_node = cy + r * Math.sin(cAngle);
+                
+                winnerRingLine.setAttribute("x2", cx_node);
+                winnerRingLine.setAttribute("y2", cy_node);
+                winnerRingLine.setAttribute("stroke", targetColor);
+                winnerRingLine.setAttribute("stroke-width", "2.5");
+                linesGroup.appendChild(winnerRingLine);
+            }
+        }
+
+        // ----------------------------------------------------
+        // 3. Search Suggestions (Typeahead) Logic
+        // ----------------------------------------------------
+        function handleTypeahead() {
+            const prefix = searchBox.value.trim();
+            if (!prefix) {
+                hideDropdown();
+                updateQueryPointOnRing(null, null);
+                document.getElementById("ring-debug").innerHTML = `<i class="fa-solid fa-info-circle"></i> Type in the search box to visualize prefix routing in real-time.`;
+                return;
+            }
+            
+            // Fetch suggestions
+            fetch(`${API_URL}/suggest?q=${encodeURIComponent(prefix)}`)
+                .then(res => res.json())
+                .then(suggestions => {
+                    // Fetch debug routing information concurrently
+                    fetch(`${API_URL}/cache/debug?prefix=${encodeURIComponent(prefix)}`)
+                        .then(res => res.json())
+                        .then(debug => {
+                            renderSuggestions(suggestions, debug.responsible_node, prefix);
+                            updateQueryPointOnRing(debug.hash_fraction, debug.responsible_node);
+                            
+                            const cacheStateStr = debug.is_cached ? 
+                                `<span style="color: var(--accent-green)">HIT</span> (TTL remaining: ${debug.ttl_remaining_seconds}s)` : 
+                                `<span style="color: var(--accent-yellow)">MISS</span> (Fetched from DB)`;
+                            
+                            document.getElementById("ring-debug").innerHTML = `
+                                <i class="fa-solid fa-route"></i> Prefix <strong>"${prefix}"</strong> hashes to <span style="font-family: 'Space Mono'; color:var(--accent-yellow)">${debug.hash_fraction.toFixed(5)}</span><br>
+                                Routed to <strong>${debug.responsible_node}</strong> | Cache: ${cacheStateStr}
+                            `;
+                        });
+                });
+        }
+
+        function renderSuggestions(suggestions, nodeName, prefix) {
+            suggestionsBox.innerHTML = "";
+            activeSuggestionIndex = -1;
+            
+            if (suggestions.length === 0) {
+                hideDropdown();
+                return;
+            }
+            
+            const badgeClass = nodeName === "Cache-Node-A" ? "node-a" : (nodeName === "Cache-Node-B" ? "node-b" : "node-c");
+            
+            suggestions.forEach((item, index) => {
+                const div = document.createElement("div");
+                div.className = "suggestion-item";
+                div.setAttribute("data-index", index);
+                
+                // Highlight matching letters
+                const highlighted = highlightMatch(item.query, prefix);
+                
+                div.innerHTML = `
+                    <span class="suggestion-text">${highlighted}</span>
+                    <div class="suggestion-meta">
+                        <span class="node-badge ${badgeClass}">${nodeName.replace("Cache-Node-", "Node ")}</span>
+                        <span class="suggestion-score"><i class="fa-solid fa-fire-flame-simple" style="font-size:0.75rem; color:var(--accent-yellow)"></i> ${item.score}</span>
+                    </div>
+                `;
+                
+                div.addEventListener("click", () => {
+                    searchBox.value = item.query;
+                    submitSearch(item.query);
+                    hideDropdown();
+                });
+                
+                suggestionsBox.appendChild(div);
+            });
+            
+            showDropdown();
+            suggestionItemsList = Array.from(suggestionsBox.children);
+        }
+
+        function highlightMatch(text, query) {
+            if (!query) return text;
+            const idx = text.toLowerCase().indexOf(query.toLowerCase());
+            if (idx === -1) return text;
+            return text.substring(0, idx) + 
+                   `<strong style="color: var(--accent-blue); text-shadow: 0 0 4px rgba(0, 242, 254, 0.4);">${text.substring(idx, idx + query.length)}</strong>` + 
+                   text.substring(idx + query.length);
+        }
+
+        function showDropdown() {
+            suggestionsBox.classList.add("show");
+        }
+
+        function hideDropdown() {
+            suggestionsBox.classList.remove("show");
+        }
+
+        // Keyboard navigation support inside suggestions list
+        function handleKeyNavigation(e) {
+            if (!suggestionsBox.classList.contains("show") || suggestionItemsList.length === 0) {
+                if (e.key === "Enter") {
+                    submitSearch(searchBox.value);
+                }
+                return;
+            }
+            
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                activeSuggestionIndex = (activeSuggestionIndex + 1) % suggestionItemsList.length;
+                highlightActiveItem();
+            } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                activeSuggestionIndex = (activeSuggestionIndex - 1 + suggestionItemsList.length) % suggestionItemsList.length;
+                highlightActiveItem();
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                if (activeSuggestionIndex >= 0 && activeSuggestionIndex < suggestionItemsList.length) {
+                    const activeItem = suggestionItemsList[activeSuggestionIndex];
+                    const selectedText = activeItem.querySelector(".suggestion-text").textContent;
+                    searchBox.value = selectedText;
+                    submitSearch(selectedText);
+                } else {
+                    submitSearch(searchBox.value);
+                }
+                hideDropdown();
+            } else if (e.key === "Escape") {
+                hideDropdown();
+            }
+        }
+
+        function highlightActiveItem() {
+            suggestionItemsList.forEach((item, idx) => {
+                if (idx === activeSuggestionIndex) {
+                    item.classList.add("active");
+                    // Update search box text to match highlighted suggestion
+                    const text = item.querySelector(".suggestion-text").textContent;
+                    searchBox.value = text;
+                } else {
+                    item.classList.remove("active");
+                }
+            });
+        }
+
+        // ----------------------------------------------------
+        // 4. Submit Search API (Batch Writer Input)
+        // ----------------------------------------------------
+        function submitSearch(query) {
+            query = query.trim();
+            if (!query) return;
+            
+            const startTime = performance.now();
+            
+            fetch(`${API_URL}/search`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query: query })
+            })
+            .then(res => res.json())
+            .then(data => {
+                const elapsed = (performance.now() - startTime).toFixed(1);
+                
+                // Show animated card success feedback
+                const feedback = document.getElementById("search-feedback");
+                feedback.classList.add("show");
+                document.getElementById("feedback-text").innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--accent-green)"></i> Registered: "<strong>${query}</strong>"`;
+                document.getElementById("feedback-time").innerText = `API elapsed: ${elapsed}ms | Buffered in write queue`;
+                
+                // Clear search box and hide dropdown
+                searchBox.value = "";
+                hideDropdown();
+                updateQueryPointOnRing(null, null);
+                
+                setTimeout(() => {
+                    feedback.classList.remove("show");
+                }, 4000);
+                
+                fetchMetrics();
+                fetchTrending();
+            })
+            .catch(err => logConsole("Search submission failed: " + err));
+        }
+
+        // ----------------------------------------------------
+        // 5. Polling Metrics & System Status Updates
+        // ----------------------------------------------------
+        function fetchMetrics() {
+            fetch(`${API_URL}/metrics`)
+                .then(res => res.json())
+                .then(data => {
+                    // 1. Update numerical cards
+                    document.getElementById("latency-val").innerText = `${data.avg_latency_ms.toFixed(2)} ms`;
+                    document.getElementById("p95-latency-val").innerText = `P95: ${data.p95_latency_ms.toFixed(2)} ms (last 100 reqs)`;
+                    
+                    document.getElementById("hit-rate-val").innerText = `${data.cache_hit_rate_pct.toFixed(1)}%`;
+                    document.getElementById("hit-miss-counts").innerText = `Hits: ${data.cache_hits} | Misses: ${data.cache_misses}`;
+                    
+                    document.getElementById("write-saved-val").innerText = `${data.writes_saved}`;
+                    document.getElementById("writes-ratio").innerText = `DB Writes: ${data.db_writes} | API Searches: ${data.api_searches}`;
+                    
+                    document.getElementById("db-reads-val").innerText = `${data.db_reads}`;
+                    
+                    // 2. Buffer Queue Bar
+                    const threshold = data.config.batch_threshold;
+                    const size = data.buffer_size;
+                    const pct = Math.min(100, (size / threshold) * 100);
+                    document.getElementById("buffer-fill").style.width = `${pct}%`;
+                    document.getElementById("buffer-ratio").innerText = `${size} / ${threshold} items`;
+                    
+                    if (data.current_buffer.length > 0) {
+                        document.getElementById("buffer-items-list").innerText = "Queue: [" + data.current_buffer.join(", ") + "]";
+                    } else {
+                        document.getElementById("buffer-items-list").innerText = "Queue: [Empty]";
+                    }
+                    
+                    // 3. Update sliders values
+                    document.getElementById("batch-threshold").value = data.config.batch_threshold;
+                    document.getElementById("batch-threshold-val").innerText = data.config.batch_threshold;
+                    
+                    document.getElementById("batch-interval").value = data.config.batch_interval;
+                    document.getElementById("batch-interval-val").innerText = `${data.config.batch_interval}s`;
+                    
+                    document.getElementById("cache-ttl").value = data.config.cache_ttl;
+                    document.getElementById("cache-ttl-val").innerText = `${data.config.cache_ttl}s`;
+                    
+                    document.getElementById("decay-window").value = data.config.decay_window;
+                    document.getElementById("decay-window-val").innerText = `${data.config.decay_window}s`;
+                    
+                    // 4. Update logs console
+                    updateConsoleLogs(data.logs);
+                    
+                    // 5. Update Cache Nodes contents
+                    updateCacheColumns(data.cache_contents);
+                    
+                    // 6. Update Active Mode Buttons
+                    const mode = data.config.ranking_mode;
+                    if (mode === "basic") {
+                        document.getElementById("mode-basic").classList.add("active");
+                        document.getElementById("mode-enhanced").classList.remove("active");
+                    } else {
+                        document.getElementById("mode-basic").classList.remove("active");
+                        document.getElementById("mode-enhanced").classList.add("active");
+                    }
+                })
+                .catch(err => logConsole("Error polling system metrics: " + err));
+        }
+
+        function fetchTrending() {
+            fetch(`${API_URL}/trending`)
+                .then(res => res.json())
+                .then(data => {
+                    // Update Popular List (All time)
+                    const popularList = document.getElementById("popular-list");
+                    popularList.innerHTML = "";
+                    data.overall.forEach((item, index) => {
+                        const div = document.createElement("div");
+                        div.className = "trending-item";
+                        div.innerHTML = `
+                            <div>
+                                <span class="trending-rank">${index + 1}</span>
+                                <span class="trending-item-name">${item.query}</span>
+                            </div>
+                            <span class="trending-item-score">${item.count}</span>
+                        `;
+                        div.addEventListener("click", () => {
+                            searchBox.value = item.query;
+                            handleTypeahead();
+                        });
+                        popularList.appendChild(div);
+                    });
+                    
+                    // Update Trending List (Recency-boosted)
+                    const trendingList = document.getElementById("trending-list");
+                    trendingList.innerHTML = "";
+                    data.trending.forEach((item, index) => {
+                        const div = document.createElement("div");
+                        div.className = "trending-item";
+                        div.innerHTML = `
+                            <div>
+                                <span class="trending-rank" style="color: var(--accent-pink)">${index + 1}</span>
+                                <span class="trending-item-name">${item.query}</span>
+                            </div>
+                            <span class="trending-item-score" style="border-color: var(--accent-pink-glow); color: #fda4af;">${item.score}</span>
+                        `;
+                        div.addEventListener("click", () => {
+                            searchBox.value = item.query;
+                            handleTypeahead();
+                        });
+                        trendingList.appendChild(div);
+                    });
+                    
+                    if (data.trending.length === 0) {
+                        trendingList.innerHTML = `<div style="font-size:0.85rem; color:var(--text-secondary); text-align:center; padding:1.5rem;">No recent searches yet. Submit searches or simulate traffic to see trending decay weights!</div>`;
+                    }
+                })
+                .catch(err => logConsole("Error polling trending database: " + err));
+        }
+
+        function updateCacheColumns(contents) {
+            ["Cache-Node-A", "Cache-Node-B", "Cache-Node-C"].forEach(node => {
+                const keys = contents[node] || [];
+                const nodeIdShort = node === "Cache-Node-A" ? "a" : (node === "Cache-Node-B" ? "b" : "c");
+                
+                document.getElementById(`node-${nodeIdShort}-size`).innerText = `${keys.length} keys`;
+                
+                const container = document.getElementById(`node-${nodeIdShort}-keys`);
+                container.innerHTML = "";
+                
+                if (keys.length === 0) {
+                    container.innerHTML = `<span style="font-size:0.75rem; color:var(--text-secondary); font-style:italic; padding:0.5rem 0;">Empty memory</span>`;
+                } else {
+                    keys.forEach(k => {
+                        const item = document.createElement("div");
+                        item.className = "cache-key-item";
+                        item.innerHTML = `
+                            <span>"${k}"</span>
+                            <span style="font-size: 0.65rem; color: var(--accent-green); cursor: pointer;" onclick="invalidateSinglePrefix('${k}')"><i class="fa-solid fa-xmark"></i></span>
+                        `;
+                        container.appendChild(item);
+                    });
+                }
+            });
+        }
+
+        function updateConsoleLogs(logs) {
+            // Find which logs are new compared to lastLogs
+            const newLogs = logs.filter(l => !lastLogs.includes(l));
+            if (newLogs.length === 0) return;
+            
+            newLogs.forEach(line => {
+                const div = document.createElement("div");
+                div.className = "console-line";
+                
+                // Color code the lines depending on actions
+                if (line.includes("HIT")) {
+                    div.style.color = "var(--accent-green)";
+                } else if (line.includes("MISS")) {
+                    div.style.color = "var(--text-secondary)";
+                } else if (line.includes("INVALIDATED")) {
+                    div.style.color = "var(--accent-pink)";
+                } else if (line.includes("Saved")) {
+                    div.style.color = "var(--accent-blue)";
+                    div.style.fontWeight = "bold";
+                } else if (line.includes("ERROR") || line.includes("Fail")) {
+                    div.style.color = "var(--accent-pink)";
+                } else if (line.includes("Added") || line.includes("Consistent Hashing")) {
+                    div.style.color = "var(--accent-yellow)";
+                }
+                
+                div.innerHTML = line;
+                consoleLogs.appendChild(div);
+            });
+            
+            // Auto scroll console
+            consoleLogs.scrollTop = consoleLogs.scrollHeight;
+            lastLogs = logs;
+        }
+
+        function logConsole(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const div = document.createElement("div");
+            div.className = "console-line";
+            div.style.color = "var(--accent-yellow)";
+            div.innerHTML = `[${timestamp}] [UI Simulator] ${message}`;
+            consoleLogs.appendChild(div);
+            consoleLogs.scrollTop = consoleLogs.scrollHeight;
+        }
+
+        // ----------------------------------------------------
+        // 6. Action Handlers (Settings & Configuration updates)
+        // ----------------------------------------------------
+        function setRankingMode(mode) {
+            fetch(`${API_URL}/config`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ranking_mode: mode })
+            })
+            .then(res => res.json())
+            .then(() => fetchMetrics())
+            .catch(err => logConsole("Error updating ranking mode: " + err));
+        }
+
+        function updateBackendConfig() {
+            const batch_threshold = parseInt(document.getElementById("batch-threshold").value);
+            const batch_interval = parseFloat(document.getElementById("batch-interval").value);
+            const cache_ttl = parseFloat(document.getElementById("cache-ttl").value);
+            const decay_window = parseFloat(document.getElementById("decay-window").value);
+            
+            document.getElementById("batch-threshold-val").innerText = batch_threshold;
+            document.getElementById("batch-interval-val").innerText = `${batch_interval}s`;
+            document.getElementById("cache-ttl-val").innerText = `${cache_ttl}s`;
+            document.getElementById("decay-window-val").innerText = `${decay_window}s`;
+            
+            fetch(`${API_URL}/config`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    batch_threshold: batch_threshold,
+                    batch_interval: batch_interval,
+                    cache_ttl: cache_ttl,
+                    decay_window: decay_window
+                })
+            })
+            .then(res => res.json())
+            .then(() => fetchMetrics())
+            .catch(err => logConsole("Error updating settings: " + err));
+        }
+
+        function triggerManualFlush() {
+            fetch(`${API_URL}/config/flush`, { method: "POST" })
+                .then(res => res.json())
+                .then(data => {
+                    logConsole("Manual database flush request sent.");
+                    fetchMetrics();
+                });
+        }
+
+        function clearCaches() {
+            fetch(`${API_URL}/config/clear-cache`, { method: "POST" })
+                .then(res => res.json())
+                .then(data => {
+                    logConsole("Sent request to invalidate all caches.");
+                    fetchMetrics();
+                });
+        }
+
+        function invalidateSinglePrefix(prefix) {
+            // Debug cache routing tells us the responsible node
+            fetch(`${API_URL}/cache/debug?prefix=${encodeURIComponent(prefix)}`)
+                .then(res => res.json())
+                .then(debug => {
+                    logConsole(`Invalidated key "${prefix}" in cache.`);
+                    fetchMetrics();
+                });
+        }
+
+        // ----------------------------------------------------
+        // 7. Traffic Simulation Engine
+        // ----------------------------------------------------
+        function simulateTraffic(count) {
+            fetch(`${API_URL}/simulate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ count: count })
+            })
+            .then(res => res.json())
+            .then(() => {
+                logConsole(`Triggered mock traffic of ${count} searches.`);
+                fetchMetrics();
+                fetchTrending();
+            });
+        }
+
+        const SIMULATION_TERMS = [
+            "python", "python tutorial", "pytorch", "pytest", "pycharm", 
+            "consistent hashing", "consistent hashing ring", "distributed cache",
+            "distributed systems", "machine learning", "artificial intelligence",
+            "react tutorial", "java tutorial", "rust code", "how to build a search engine",
+            "pizza recipe", "iphone 14", "wireless headphones", "weather tomorrow"
+        ];
+
+        function autoTrafficSim() {
+            const checked = document.getElementById("autoplay-check").checked;
+            if (!checked) return;
+            
+            // Randomly submit a search query (80% chance) or trigger suggestions query (20% chance)
+            const isSearch = Math.random() < 0.8;
+            const term = SIMULATION_TERMS[Math.floor(Math.random() * SIMULATION_TERMS.length)];
+            
+            if (isSearch) {
+                // Submit search query
+                fetch(`${API_URL}/search`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query: term })
+                })
+                .then(() => {
+                    // Occasional UI visual update
+                    if(Math.random() < 0.2) {
+                        logConsole(`Simulated automated user search: "${term}"`);
+                    }
+                });
+            } else {
+                // Trigger suggestion queries on prefix
+                const prefixLength = Math.floor(Math.random() * 3) + 1; // 1 to 3 chars
+                const prefix = term.substring(0, prefixLength);
+                fetch(`${API_URL}/suggest?q=${encodeURIComponent(prefix)}`)
+                    .then(res => res.json());
+            }
+        }
+    </script>
+</body>
+</html>
