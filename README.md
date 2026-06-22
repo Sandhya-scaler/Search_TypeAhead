@@ -4,6 +4,29 @@ A high-performance, distributed-cache Search Typeahead System built in Python (F
 
 ---
 
+## 📐 System Architecture Diagram
+
+```mermaid
+graph TD
+    User([User Browser]) -->|1. GET /suggest?q=prefix| CacheRing{Consistent Hash Ring}
+    User -->|4. POST /search| Buffer[Batch Write Buffer]
+    
+    CacheRing -->|2. Route to Node| NodeA[Cache Node A]
+    CacheRing -->|2. Route to Node| NodeB[Cache Node B]
+    CacheRing -->|2. Route to Node| NodeC[Cache Node C]
+    
+    NodeA -->|3. DB Fallback on Miss| DB[(SQLite DB)]
+    NodeB -->|3. DB Fallback on Miss| DB
+    NodeC -->|3. DB Fallback on Miss| DB
+    
+    Buffer -->|5. Aggregated Bulk Commit| DB
+    Buffer -.->|6. Invalidate Prefix Cache| NodeA
+    Buffer -.->|6. Invalidate Prefix Cache| NodeB
+    Buffer -.->|6. Invalidate Prefix Cache| NodeC
+```
+
+---
+
 ## 1. Features & Architectural Components
 
 ### 🖥️ Interactive Control Center
